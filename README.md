@@ -1,0 +1,1 @@
+First iteration of OBRC in rust. Although not optimized as much as possible, it does beat polars in python in terms of processing time and memory usage, even in polars streaming mode.
