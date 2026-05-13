@@ -25,5 +25,3 @@ min_val.sink_csv("output_p.csv")
 elapsed = time.time() - start
 print("Minimum Value (subset):", min_val)
 print("Runtime:", elapsed, "seconds")
-
-
