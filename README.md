@@ -1,1 +1,1 @@
-First iteration of OBRC in rust. Although not optimized as much as possible, it does beat polars in python in terms of processing time and memory usage, even in polars streaming mode.
+First iteration of OBRC in rust. Runs in 6 - 7 seconds. Perhaps not the fastest implementation, but it is faster in terms of processing time and memory useage compared with polars in python.
