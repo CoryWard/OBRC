@@ -7,7 +7,8 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Write};
 use std::time::Instant;
-use std::thread::{scope};
+use std::thread::{JoinHandle, ScopedJoinHandle, scope};
+use std::thread;
 use std::collections::{HashMap};
 
 const THREADS: usize = 14;
@@ -52,7 +53,7 @@ fn main() -> io::Result<()> {
     let start = Instant::now();
     // Scan file and calculate minimum temperature.
     let file = File::open("measurements.txt")?;
-    let reader = io::BufReader::with_capacity(1000 * 1000 * 1024, file);
+    let reader = io::BufReader::with_capacity(10 * 1000 * 1000, file);
 
     calc_stats(reader)?;
 
@@ -68,6 +69,11 @@ pub fn calc_stats(
 
     let mut all_stats = HashMap::new();
 
+    let mut stats_vec = Vec::<HashMap::<String, Stats>>::with_capacity(THREADS);
+    for _ in 0..THREADS {
+        stats_vec.push(HashMap::new());
+    }
+
     loop {
         let buf = reader.fill_buf()?;
 
@@ -80,34 +86,22 @@ pub fn calc_stats(
         let slices = get_chuncks(buf, &mut leftover, &mut combined);
     
         // Compute stats.
-        scope(|scope| {
-            let mut handles = Vec::new();
-            for slice in slices {
-                let handle = scope.spawn(move || {
-                    let mut stats = HashMap::<String, Stats>::new();
-                    for line in slice.split(|&b| b == b'\n') {
-                        if !line.is_empty() {
-                            process_line(line, &mut stats);
+        scope(|scope|{
+            let mut handles = Vec::<ScopedJoinHandle<()>>::new();
+            for (slice, stats) in slices.iter().zip(stats_vec.iter_mut()) {
+                handles.push(
+                    scope.spawn(|| {
+                        for line in slice.split(|&b| b == b'\n') {
+                            if !line.is_empty() {
+                                process_line(line, stats);
+                            }
                         }
-                    }
-                    stats
-                });
-
-                handles.push(handle);
+                    })
+                );
             }
 
             for handle in handles {
-                let stat_map = handle.join().unwrap();
-                for (key, value) in stat_map.into_iter() {
-                    if !all_stats.contains_key(&key) {
-                        all_stats.insert(key, value);
-                    }
-                    else {
-                        all_stats.get_mut(&key).unwrap().update(value);
-                        
-                    }
-                }
-
+                handle.join().unwrap();
             }
         });
 
@@ -115,6 +109,18 @@ pub fn calc_stats(
         let buf_len = buf.len();
         reader.consume(buf_len);
     };
+
+    for stats_map in stats_vec.into_iter() {
+        for (key, value) in stats_map.into_iter() {
+            if !all_stats.contains_key(&key) {
+                all_stats.insert(key, value);
+            }
+            else {
+                all_stats.get_mut(&key).unwrap().update(value);
+                
+            }
+        }
+    }
 
     write_map(&all_stats);
     Ok(())
@@ -188,7 +194,7 @@ fn process_line(
     if let Some(semi) = line.iter().position(|&b| b == b';') {
         let city_bytes = &line[..semi];
         let temp_bytes = &line[semi + 1..];
-        // let num_str = unsafe { std::str::from_utf8_unchecked(num_bytes) };
+        // let city_str = unsafe { std::str::from_utf8_unchecked(city_bytes) };
         let city_str = std::str::from_utf8(city_bytes).unwrap();
         let num_str = std::str::from_utf8(temp_bytes).unwrap();
         let float: f64 = num_str.trim().parse().expect(num_str);
